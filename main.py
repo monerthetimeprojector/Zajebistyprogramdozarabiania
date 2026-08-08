@@ -12,7 +12,7 @@ from colorama import init, Fore, Style
 # Inicjalizacja kolorów
 init(autoreset=True)
 
-# Lista User-Agentów do rotacji
+# Lista User-Agentów do rotacji, by wyglądać jak różne przeglądarki
 USER_AGENTS = [
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/114.0.0.0 Safari/537.36",
     "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/113.0.0.0 Safari/537.36",
@@ -31,22 +31,23 @@ def print_banner():
  | |  | | (_) | | | |  __/ |   ___) |   <| | (_| | (_| | | | | | | (_| |>  < 
  |_|  |_|\___/|_| |_|\___|_|  |____/|_|\_\_|\__,_|\__,_|_| |_| |_|\__,_/_/\_/
 {Style.RESET_ALL}
-    {Fore.CYAN}[+] Wersja: v2.1 PROXY & BYPASS EDITION
+    {Fore.CYAN}[+] Wersja: v2.2 AUTO-ROTATION TANK
     [+] Credits: @monerthetimeprojector 
-    [+] Ulepszone: Bypass Cookies, Agresywny Regex, Proxy Checker
+    [+] Ulepszone: Auto-Rotacja Proxy w locie, Detekcja Bana 429
     {Style.RESET_ALL}"""
     print(banner)
 
 # ================= PROXY SYSTEM =================
 
 def get_free_proxies():
-    print(f"\n{Fore.YELLOW}[*] Pobieranie darmowych proxy...{Style.RESET_ALL}")
+    print(f"\n{Fore.YELLOW}[*] Pobieranie darmowych proxy (HTTP/S)...{Style.RESET_ALL}")
     try:
+        # Pobieramy z potężnego API proxyscrape
         url = "https://api.proxyscrape.com/v2/?request=displayproxies&protocol=http&timeout=10000&country=all&ssl=all&anonymity=all"
         response = requests.get(url, timeout=10)
         proxies = response.text.strip().split("\r\n")
         proxies = [p for p in proxies if p]
-        print(f"{Fore.GREEN}[+] Pobrano {len(proxies)} proxy do sprawdzenia.{Style.RESET_ALL}")
+        print(f"{Fore.GREEN}[+] Pociągnięto {len(proxies)} proxy z bazy.{Style.RESET_ALL}")
         return proxies
     except Exception as e:
         print(f"{Fore.RED}[!] Błąd pobierania proxy: {e}{Style.RESET_ALL}")
@@ -54,17 +55,22 @@ def get_free_proxies():
 
 def check_proxy(proxy):
     proxies = {"http": f"http://{proxy}", "https": f"http://{proxy}"}
+    headers = {"User-Agent": random.choice(USER_AGENTS)}
     try:
-        requests.get("https://www.google.com", proxies=proxies, timeout=5)
-        return proxy
+        # NOWOŚĆ: Sprawdzamy nie tylko czy jest połączenie, ale czy Google daje 200 OK (brak bana)!
+        res = requests.get("https://www.google.com/search?q=test", proxies=proxies, headers=headers, timeout=5)
+        if res.status_code == 200:
+            return proxy
+        return None
     except:
         return None
 
-def check_and_filter_proxies(proxies, limit=15):
-    print(f"{Fore.YELLOW}[*] Sprawdzanie działających proxy (wielowątkowo)...{Style.RESET_ALL}")
+def check_and_filter_proxies(proxies, limit=20):
+    print(f"{Fore.YELLOW}[*] Ostre filtrowanie proxy (szukam tych bez bana 429 od Google)...{Style.RESET_ALL}")
     working_proxies = []
-    with concurrent.futures.ThreadPoolExecutor(max_workers=20) as executor:
-        results = executor.map(check_proxy, proxies[:100])
+    with concurrent.futures.ThreadPoolExecutor(max_workers=30) as executor:
+        # Sprawdzamy pierwsze 250, żeby znaleźć perełki
+        results = executor.map(check_proxy, proxies[:250])
         for res in results:
             if res:
                 working_proxies.append(res)
@@ -72,113 +78,133 @@ def check_and_filter_proxies(proxies, limit=15):
                 sys.stdout.flush()
             if len(working_proxies) >= limit:
                 break
-    print(f"\n{Fore.GREEN}[+] Znaleziono {len(working_proxies)} szybkich proxy!{Style.RESET_ALL}")
+    print(f"\n{Fore.GREEN}[+] Przefiltrowano! Masz {len(working_proxies)} potężnych proxy, gotowych do akcji.{Style.RESET_ALL}")
     return working_proxies
 
 # ================= CORE SCRAPER =================
 
 def get_maps_link(name, address):
-    """Generuje klikalny link do Google Maps"""
     query = f"{name} {address}"
     encoded_query = urllib.parse.quote(query)
     return f"https://www.google.com/maps/search/?api=1&query={encoded_query}"
 
-def scrape_leads_no_api(keyword, region, limit, proxy=None):
-    print(f"\n{Fore.YELLOW}[*] Uruchamiam zaawansowany scraper dla: {keyword} w {region}{Style.RESET_ALL}")
+def scrape_leads_no_api(keyword, region, limit, working_proxies=None):
+    print(f"\n{Fore.YELLOW}[*] Uruchamiam zmasowany atak dla: {keyword} w {region}{Style.RESET_ALL}")
     leads = []
     
-    headers = {
-        "User-Agent": random.choice(USER_AGENTS),
-        "Accept-Language": "pl-PL,pl;q=0.9,en-US;q=0.8",
-        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8"
-    }
+    cookies = {"CONSENT": "YES+cb.20230531-04-p0.pl+FX+111"}
     
-    # MAGICZNE CIASTECZKO - omija ekran "Zgadzam się" (RODO) na Google. Bez tego skrypt dostaje pustą stronę!
-    cookies = {
-        "CONSENT": "YES+cb.20230531-04-p0.pl+FX+111"
-    }
-    
-    proxies = {"http": f"http://{proxy}", "https": f"http://{proxy}"} if proxy else None
-
+    # Dodane hl=pl, aby Google dawało polskie mapy
     search_query = f"{keyword} {region}"
-    # Zwiększamy bufor w num, by na pewno wyciągnąć limit
-    url = f"https://www.google.com/search?q={urllib.parse.quote(search_query)}&num={limit + 20}"
+    url = f"https://www.google.com/search?q={urllib.parse.quote(search_query)}&num={limit + 20}&hl=pl"
     
-    try:
-        print(f"{Fore.CYAN}[*] Łączenie z bazą Google...{Style.RESET_ALL}")
-        response = requests.get(url, headers=headers, cookies=cookies, proxies=proxies, timeout=15)
+    max_retries = 5
+    attempts = 0
+    
+    # Pętla auto-rotacji - jak jedno proxy padnie, skrypt bierze następne!
+    while attempts < max_retries:
+        attempts += 1
+        headers = {
+            "User-Agent": random.choice(USER_AGENTS),
+            "Accept-Language": "pl-PL,pl;q=0.9,en-US;q=0.8",
+            "Referer": "https://www.google.com/"
+        }
         
-        if response.status_code == 429:
-            print(f"{Fore.RED}[!] Google zablokowało IP (Kod 429). Użyj proxy!{Style.RESET_ALL}")
-            return leads
-
-        soup = BeautifulSoup(response.text, "html.parser")
+        current_proxy = None
+        proxies_dict = None
         
-        # AGRESYWNY PARSER: Szukamy h3 lub divów z klasami odpowiadającymi tytułom w surowym HTML
-        for element in soup.find_all(['h3', 'div']):
-            if len(leads) >= limit:
+        if working_proxies:
+            if not working_proxies:
+                print(f"{Fore.RED}[!] Skończyły się działające proxy. Przerywam...{Style.RESET_ALL}")
                 break
-                
-            # Łapiemy tagi tytułowe lub surowe klasy wyników lokalnych (BNeawe to popularna ukryta klasa w Google)
-            if element.name == 'h3' or (element.has_attr('class') and any('BNeawe' in c for c in element['class'])):
-                name = element.text.strip()
-                
-                # Ignorujemy fałszywe bloki typu "Więcej wyników"
-                if len(name) < 3 or "Więcej wyników" in name or "http" in name:
-                    continue
-
-                # Idziemy w górę drzewa HTML, by chwycić CAŁY kontener biznesu
-                parent = element.parent
-                for _ in range(4):
-                    if parent: parent = parent.parent
-                    
-                if parent:
-                    text_content = parent.get_text(separator=' ')
-                    
-                    # Regex na polskie numery: +48, spacje, myślniki, kropki
-                    phone_match = re.search(r'(?:\+48)?[\s\-]?\d{3}[\s\-]?\d{3}[\s\-]?\d{3}', text_content)
-                    
-                    if phone_match:
-                        phone_raw = phone_match.group()
-                        phone_clean = re.sub(r'[^\d+]', '', phone_raw) # Zostawiamy tylko cyfry i +
-                        
-                        if len(phone_clean) >= 9:
-                            # Zapobiegamy dublowaniu leadów w bazie
-                            if not any(lead['name'] == name for lead in leads) and not any(lead['phone'] == phone_clean for lead in leads):
-                                leads.append({
-                                    "name": name,
-                                    "address": region,
-                                    "phone": phone_clean
-                                })
-                                
-        # Generowanie Smart Linków
-        for lead in leads:
-            lead['maps_link'] = get_maps_link(lead['name'], lead['address'])
+            current_proxy = random.choice(working_proxies)
+            proxies_dict = {"http": f"http://{current_proxy}", "https": f"http://{current_proxy}"}
+            print(f"{Fore.CYAN}[*] [Próba {attempts}/{max_retries}] Lecę przez IP: {current_proxy}{Style.RESET_ALL}")
+        else:
+            print(f"{Fore.CYAN}[*] [Próba {attempts}/{max_retries}] Łączenie z bazą Google (bez proxy)...{Style.RESET_ALL}")
             
-        print(f"{Fore.GREEN}[+] Zeskanowano pomyślnie. Znaleziono leadów: {len(leads)}{Style.RESET_ALL}")
-        return leads
+        try:
+            response = requests.get(url, headers=headers, cookies=cookies, proxies=proxies_dict, timeout=15)
+            
+            # Detekcja Bana 429
+            if response.status_code == 429:
+                print(f"{Fore.RED}[!] Błąd 429! To IP ma limit.{Style.RESET_ALL}")
+                if working_proxies and current_proxy in working_proxies:
+                    working_proxies.remove(current_proxy) # Wywalamy zepsute proxy
+                    print(f"{Fore.YELLOW}[*] Wywalam zbanowane proxy. Podmieniam na nowe...{Style.RESET_ALL}")
+                time.sleep(2)
+                continue # Pętla startuje od nowa z nowym proxy!
+                
+            elif response.status_code != 200:
+                print(f"{Fore.RED}[!] Inny błąd: {response.status_code}. Próbuję dalej...{Style.RESET_ALL}")
+                continue
 
-    except Exception as e:
-        print(f"{Fore.RED}[!] Wystąpił błąd podczas scrapowania: {e}{Style.RESET_ALL}")
-        return leads
+            # Jeśli doszliśmy tutaj, mamy kod 200 OK! Scrapujemy.
+            print(f"{Fore.GREEN}[+] Kod 200! Mam HTML. Rozpoczynam cięcie danych...{Style.RESET_ALL}")
+            soup = BeautifulSoup(response.text, "html.parser")
+            
+            for element in soup.find_all(['h3', 'div']):
+                if len(leads) >= limit:
+                    break
+                    
+                if element.name == 'h3' or (element.has_attr('class') and any('BNeawe' in c for c in element['class'])):
+                    name = element.text.strip()
+                    
+                    if len(name) < 3 or "Więcej wyników" in name or "http" in name:
+                        continue
+
+                    parent = element.parent
+                    for _ in range(4):
+                        if parent: parent = parent.parent
+                        
+                    if parent:
+                        text_content = parent.get_text(separator=' ')
+                        phone_match = re.search(r'(?:\+48)?[\s\-]?\d{3}[\s\-]?\d{3}[\s\-]?\d{3}', text_content)
+                        
+                        if phone_match:
+                            phone_raw = phone_match.group()
+                            phone_clean = re.sub(r'[^\d+]', '', phone_raw)
+                            
+                            if len(phone_clean) >= 9:
+                                if not any(lead['name'] == name for lead in leads) and not any(lead['phone'] == phone_clean for lead in leads):
+                                    leads.append({
+                                        "name": name,
+                                        "address": region,
+                                        "phone": phone_clean
+                                    })
+                                    
+            # Zakończ pętlę prób, bo udało się pobrać HTML i go przetworzyć
+            break 
+            
+        except requests.exceptions.RequestException as e:
+            print(f"{Fore.RED}[!] Błąd połączenia: {e}{Style.RESET_ALL}")
+            if working_proxies and current_proxy in working_proxies:
+                working_proxies.remove(current_proxy)
+            time.sleep(2)
+            continue
+            
+    # Na koniec dodajemy linki
+    for lead in leads:
+        lead['maps_link'] = get_maps_link(lead['name'], lead['address'])
+        
+    print(f"\n{Fore.GREEN}[$$$] Zakończono skanowanie. Upolowano leadów: {len(leads)}{Style.RESET_ALL}")
+    return leads
 
 # ================= ZAPIS DANYCH =================
 
 def save_to_phone(data):
     if not data:
-        print(f"\n{Fore.RED}[!] Brak danych do zapisania.{Style.RESET_ALL}")
+        print(f"\n{Fore.RED}[!] Brak danych do zapisania. Zmień frazę lub odśwież listę proxy.{Style.RESET_ALL}")
         return
 
-    print(f"\n{Fore.YELLOW}[?] Podaj nazwę pliku (np. leady_fizjo):{Style.RESET_ALL}")
+    print(f"\n{Fore.YELLOW}[?] Podaj nazwę pliku (np. leady_mechanik):{Style.RESET_ALL}")
     filename = input(f"{Fore.CYAN}root@monerskiddmax:~# {Style.RESET_ALL}")
     if not filename: filename = "leady_output"
     
-    # WYMUSZONA ŚCIEŻKA DO POBRANYCH ANDROIDA
     full_path = f"/sdcard/Download/{filename}.txt"
     
     if not os.path.exists("/sdcard/Download/"):
         full_path = f"{filename}.txt"
-        print(f"{Fore.YELLOW}[!] Ścieżka /sdcard/ niedostępna. Zapisuję w obecnym folderze jako {full_path}{Style.RESET_ALL}")
     
     try:
         with open(full_path, "w", encoding="utf-8") as f:
@@ -192,7 +218,7 @@ def save_to_phone(data):
                 f.write(f"📍 Link do Map: {item['maps_link']}\n")
                 f.write("-" * 50 + "\n\n")
                 
-        print(f"\n{Fore.GREEN}[$$$] ZAPISANO PRAWIDŁOWO! Możesz wysyłać!{Style.RESET_ALL}\n{Fore.CYAN}Ścieżka: {full_path}{Style.RESET_ALL}")
+        print(f"\n{Fore.GREEN}[$$$] ZAPISANO PRAWIDŁOWO! Możesz wgrywać do bazy!{Style.RESET_ALL}\n{Fore.CYAN}Plik: {full_path}{Style.RESET_ALL}")
     except Exception as e:
         print(f"\n{Fore.RED}[!] Błąd zapisu: {e}{Style.RESET_ALL}")
 
@@ -207,19 +233,22 @@ def main():
         
         print(f"{Fore.WHITE}Wybierz opcję:{Style.RESET_ALL}")
         print(f"[{Fore.CYAN}1{Style.RESET_ALL}] 🚀 Uruchom Scraper Google Maps (Standardowe IP)")
-        print(f"[{Fore.CYAN}2{Style.RESET_ALL}] 🛡️  Zdobądź i sprawdź Proxy (Zalecane)")
-        print(f"[{Fore.CYAN}3{Style.RESET_ALL}] 🚀 Uruchom Scraper używając Proxy")
+        print(f"[{Fore.CYAN}2{Style.RESET_ALL}] 🛡️  Zdobądź i sprawdź Proxy (Rygorystyczny skan)")
+        print(f"[{Fore.CYAN}3{Style.RESET_ALL}] 🚀 Uruchom Scraper używając Proxy (Auto-Rotacja)")
         print(f"[{Fore.CYAN}4{Style.RESET_ALL}] ❌ Wyjdź")
         
+        if working_proxies:
+            print(f"\n{Fore.GREEN}[*] Aktywne proxy w pamięci: {len(working_proxies)}{Style.RESET_ALL}")
+            
         choice = input(f"\n{Fore.YELLOW}[?] Wybór: {Style.RESET_ALL}")
         
         if choice == '1' or choice == '3':
             if choice == '3' and not working_proxies:
-                print(f"\n{Fore.RED}[!] Najpierw pobierz proxy (Opcja 2)!{Style.RESET_ALL}")
-                time.sleep(2)
+                print(f"\n{Fore.RED}[!] Mordzia, nie masz żadnych sprawdzonych proxy w pamięci! Odpal najpierw Opcję 2.{Style.RESET_ALL}")
+                time.sleep(3)
                 continue
                 
-            print(f"\n{Fore.YELLOW}[?] Słowo kluczowe (np. hydraulik, mechanik): {Style.RESET_ALL}", end="")
+            print(f"\n{Fore.YELLOW}[?] Słowo kluczowe (np. hydraulik, mechanik, fryzjer): {Style.RESET_ALL}", end="")
             keyword = input()
             print(f"{Fore.YELLOW}[?] Miasto / Region (np. Warszawa): {Style.RESET_ALL}", end="")
             region = input()
@@ -229,34 +258,31 @@ def main():
             except:
                 limit = 10
             
-            selected_proxy = None
-            if choice == '3':
-                selected_proxy = random.choice(working_proxies)
-                print(f"{Fore.CYAN}[*] Używam proxy: {selected_proxy}{Style.RESET_ALL}")
-                
-            leads = scrape_leads_no_api(keyword, region, limit, proxy=selected_proxy)
+            # Przekazujemy listę proxy (jeśli wybrano 3) albo None (jeśli 1)
+            proxies_to_use = working_proxies.copy() if choice == '3' else None
+            
+            leads = scrape_leads_no_api(keyword, region, limit, proxies_to_use)
             
             if leads:
                 save_to_phone(leads)
-            else:
-                print(f"\n{Fore.RED}[!] Nie znaleziono leadów. Sprawdź dokładnie zapytanie lub użyj proxy (Google blokuje czyste połączenia HTTP w niektórych sieciach).{Style.RESET_ALL}")
             
             input(f"\n{Fore.WHITE}Wciśnij ENTER, aby wrócić do menu...{Style.RESET_ALL}")
             
         elif choice == '2':
             raw_proxies = get_free_proxies()
             if raw_proxies:
-                working_proxies = check_and_filter_proxies(raw_proxies)
+                # Ogranicznik można zdjąć w kodzie wyżej, jak chcesz skanować tysiące na raz
+                working_proxies = check_and_filter_proxies(raw_proxies, limit=15)
             input(f"\n{Fore.WHITE}Wciśnij ENTER, aby wrócić do menu...{Style.RESET_ALL}")
             
         elif choice == '4':
-            print(f"\n{Fore.GREEN}[*] Pozdro mordo, owocnych łowów na leady!{Style.RESET_ALL}")
+            print(f"\n{Fore.GREEN}[*] Z fartem mordo, niech leady wchodzą szeroko!{Style.RESET_ALL}")
             break
 
 if __name__ == "__main__":
     try:
         main()
     except KeyboardInterrupt:
-        print(f"\n\n{Fore.RED}[!] Przerwano przez użytkownika. Elo!{Style.RESET_ALL}")
+        print(f"\n\n{Fore.RED}[!] Twarde lądowanie. Zamykam apkę. Elo!{Style.RESET_ALL}")
         sys.exit(0)
-        
+            
