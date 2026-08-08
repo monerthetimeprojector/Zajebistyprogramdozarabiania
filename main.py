@@ -6,7 +6,7 @@ from bs4 import BeautifulSoup
 import concurrent.futures
 from colorama import init, Fore, Style
 
-# Inicjalizacja kolorow - Lean Skid Vibe
+# Inicjalizacja kolorów - Lean Skid Vibe
 init(autoreset=True)
 
 USER_AGENTS = [
@@ -63,7 +63,6 @@ def scrape_proxies():
 def check_proxy(proxy):
     proxies_dict = {"http": f"http://{proxy}", "https": f"http://{proxy}"}
     try:
-        # Uderzamy w Google, by sprawdzić czy proxy nie ma bana
         res = requests.get("https://www.google.com/search?q=test", proxies=proxies_dict, timeout=4)
         if res.status_code == 200:
             return proxy
@@ -79,7 +78,7 @@ def verify_proxies(proxies):
         for proxy in results:
             if proxy:
                 working_proxies.append(proxy)
-                print(f"{Fore.GREEN}[+] Działające proxy Google: {proxy}")
+                print(f"{Fore.GREEN}[+] Działające proxy: {proxy}")
     
     print(f"\n{Fore.MAGENTA}[!] Pomyślnie zweryfikowano {len(working_proxies)} proxy.{Style.RESET_ALL}")
     return working_proxies
@@ -93,27 +92,32 @@ def scrape_google_leads(keyword, location, max_results, working_proxies):
     page = 0
     
     while len(valid_leads) < max_results:
-        # Jeśli mamy proxy, losujemy jedno, jeśli nie - lecimy z gołego IP
         current_proxy = random.choice(working_proxies) if working_proxies else None
         proxies_dict = {"http": f"http://{current_proxy}", "https": f"http://{current_proxy}"} if current_proxy else None
-        headers = {"User-Agent": random.choice(USER_AGENTS)}
         
-        # Google Local Search Endpoint
+        headers = {
+            "User-Agent": random.choice(USER_AGENTS),
+            "Accept-Language": "pl-PL,pl;q=0.9,en-US;q=0.8,en;q=0.7",
+            "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8"
+        }
+        # Ciasteczko RODO - kluczowe dla uniknięcia blokad w Europie
+        cookies = {"CONSENT": "YES+cb.20230101-08-p0.pl+FX+414"}
+        
         url = f"https://www.google.com/search?q={query}&tbm=lcl&start={page * 10}"
         
         try:
             print(f"{Fore.YELLOW}[~] Wysyłanie zapytania (Strona {page+1}) | Proxy: {current_proxy or 'BRAK'}")
-            res = requests.get(url, headers=headers, proxies=proxies_dict, timeout=10)
+            
+            # Timeout (5s na połączenie, 10s na dane) - zapobiega wieszaniu się skryptu
+            res = requests.get(url, headers=headers, cookies=cookies, proxies=proxies_dict, timeout=(5, 10))
             
             if res.status_code == 429:
-                print(f"{Fore.RED}[!] Zablokowane IP (Captcha). Rotacja proxy...")
+                print(f"{Fore.RED}[!] Google wykryło bota (429). Rotacja...")
                 if current_proxy in working_proxies:
                     working_proxies.remove(current_proxy)
                 continue
                 
             soup = BeautifulSoup(res.text, 'html.parser')
-            
-            # Wyszukiwanie bloków biznesowych
             businesses = soup.find_all('div', class_='g')
             
             if not businesses:
@@ -129,22 +133,24 @@ def scrape_google_leads(keyword, location, max_results, working_proxies):
                     continue
                 name = name_tag.text
                 
-                # Sprawdzamy czy biznes ma podpiętą stronę WWW
                 links = biz.find_all('a', href=True)
                 has_website = any("Witryna" in a.text or "Strona" in a.text or "Website" in a.text for a in links)
                 
                 if not has_website:
-                    valid_leads.append({
-                        "Nazwa": name,
-                        "Wyszukiwanie": query.replace("+", " ")
-                    })
+                    valid_leads.append({"Nazwa": name, "Wyszukiwanie": query.replace("+", " ")})
                     print(f"{Fore.GREEN}[+] Złowiono: {name} (BRAK STRONY WWW)")
             
             page += 1
-            time.sleep(random.uniform(2.0, 5.0)) # Anty-bot delay
+            time.sleep(random.uniform(2.0, 5.0)) # Delay dla bezpieczeństwa
             
+        except requests.exceptions.Timeout:
+            print(f"{Fore.RED}[!] Timeout: Google zablokowało połączenie.")
+            if current_proxy in working_proxies:
+                working_proxies.remove(current_proxy)
+            else:
+                break
         except Exception as e:
-            print(f"{Fore.RED}[!] Błąd żądania: {e}")
+            print(f"{Fore.RED}[!] Błąd: {e}")
             if current_proxy in working_proxies:
                 working_proxies.remove(current_proxy)
                 
@@ -156,8 +162,7 @@ def main():
     
     working_proxies = []
     
-    # 0. Opcja Proxy
-    print(f"{Fore.GREEN}[?] Czy chcesz użyć zintegrowanego Proxy Scrapera przed atakiem? (y/n)")
+    print(f"{Fore.GREEN}[?] Czy chcesz użyć zintegrowanego Proxy Scrapera? (y/n)")
     use_proxy = input(f"{Fore.MAGENTA}MonerSkiddmax > {Fore.WHITE}").lower()
     
     if use_proxy == 'y':
@@ -165,9 +170,8 @@ def main():
         if raw_proxies:
             working_proxies = verify_proxies(raw_proxies)
         if not working_proxies:
-            print(f"{Fore.YELLOW}[!] Kontynuacja na domyślnym IP urządzenia. Zachowaj ostrożność.")
+            print(f"{Fore.YELLOW}[!] Brak działających proxy. Kontynuuję na własnym IP.")
     
-    # 1. Wybór obszaru
     print(f"\n{Fore.GREEN}[?] Wybierz obszar do scrapowania:")
     voivodeships = get_voivodeships()
     for i, v in enumerate(voivodeships):
@@ -177,41 +181,29 @@ def main():
         v_choice = int(input(f"\n{Fore.MAGENTA}MonerSkiddmax > {Fore.WHITE}"))
         selected_location = voivodeships[v_choice]
     except (ValueError, IndexError):
-        print(f"{Fore.RED}[!] Zły wybór. Ustawiam: Cała Polska")
         selected_location = "Cała Polska"
 
-    # 2. Słowo kluczowe
-    print(f"\n{Fore.GREEN}[?] Wpisz słowo kluczowe (np. wulkanizacja, mechanik):")
+    print(f"\n{Fore.GREEN}[?] Wpisz słowo kluczowe:")
     keyword = input(f"{Fore.MAGENTA}MonerSkiddmax > {Fore.WHITE}")
 
-    # 3. Limit ilości
-    print(f"\n{Fore.GREEN}[?] Ile leadów BEZ STRONY WWW potrzebujesz:")
+    print(f"\n{Fore.GREEN}[?] Ile leadów BEZ STRONY WWW:")
     try:
         max_results = int(input(f"{Fore.MAGENTA}MonerSkiddmax > {Fore.WHITE}"))
     except ValueError:
         max_results = 20
-        print(f"{Fore.RED}[!] Ustawiam domyślnie: 20")
 
-    # 4. Nazwa pliku
-    print(f"\n{Fore.GREEN}[?] Podaj nazwę pliku do zapisu leadów (bez .txt):")
+    print(f"\n{Fore.GREEN}[?] Nazwa pliku:")
     filename = input(f"{Fore.MAGENTA}MonerSkiddmax > {Fore.WHITE}")
-    if not filename:
-        filename = "scraped_leads"
+    if not filename: filename = "scraped_leads"
 
-    # Scrapowanie
     results = scrape_google_leads(keyword, selected_location, max_results, working_proxies)
     
     if not results:
-        print(f"\n{Fore.RED}[!] Nic nie wyciągnięto. Google mogło wlepić bana na IP/Proxy, albo brak wyników.")
+        print(f"\n{Fore.RED}[!] Brak wyników. Zmień IP (tryb samolotowy) lub użyj proxy.")
         return
 
-    print(f"\n{Fore.GREEN}[+] Misja zakończona! Zabrano {len(results)} leadów dla Lovable.")
-    
-    # Zapis na pulpit telefonu (Download)
     save_dir = os.path.expanduser("~/storage/shared/Download")
-    if not os.path.exists(save_dir):
-        save_dir = os.getcwd()
-        print(f"{Fore.YELLOW}[!] Ścieżka telefonu zablokowana. Zapisuję w folderze bota.")
+    if not os.path.exists(save_dir): save_dir = os.getcwd()
 
     full_path = os.path.join(save_dir, f"{filename}.txt")
     
@@ -219,19 +211,15 @@ def main():
         with open(full_path, "w", encoding="utf-8") as f:
             f.write(f"--- MONERSKIDDMAX LEAD GEN ---\n")
             f.write(f"Kategoria: {keyword.upper()} | Lokacja: {selected_location.upper()}\n")
-            f.write("Status: WYZNACZENI DO STWORZENIA STRONY WWW (LOVABLE TARGETS)\n")
-            f.write("="*50 + "\n\n")
+            f.write("Status: WYZNACZENI DO STWORZENIA STRONY WWW\n\n")
             for idx, r in enumerate(results, 1):
-                f.write(f"{idx}. Nazwa: {r['Nazwa']}\n")
-                f.write(f"   [BRAK PODPIĘTEJ STRONY INTERNETOWEJ]\n")
-                f.write("-" * 40 + "\n")
-        
-        print(f"{Fore.GREEN}[+] Zapisano pomyślnie!")
-        print(f"{Fore.CYAN}[*] Plik znajdziesz tutaj: {full_path}")
+                f.write(f"{idx}. {r['Nazwa']}\n   [BRAK PODPIĘTEJ STRONY]\n\n")
+        print(f"{Fore.GREEN}[+] Zapisano! Plik: {full_path}")
     except Exception as e:
-        print(f"{Fore.RED}[!] Krytyczny błąd zapisu pliku: {e}")
+        print(f"{Fore.RED}[!] Błąd zapisu: {e}")
 
-    print(f"\n{Fore.MAGENTA}MonerSkiddmax out. Powodzenia z klientami. Pzdrr okt.{Style.RESET_ALL}")
+    print(f"\n{Fore.MAGENTA}MonerSkiddmax out. Pzdrr okt.{Style.RESET_ALL}")
 
 if __name__ == "__main__":
     main()
+            
