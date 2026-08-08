@@ -15,15 +15,17 @@ USER_AGENTS = [
 ]
 
 def banner():
-    print(f"{Fore.MAGENTA}  __  __  ____   _   _  ____  ____  ____  ____  _  _  ____  ____  _  _  ____ ")
-    print(f"{Fore.MAGENTA} (  \/  )(  _ \ ( )_( )(  __)(  _ \(  _ \(  __)( )/ )(  _ \(  _ \( )/ )(  _ \")
-    print(f"{Fore.MAGENTA}  )    (  ) _ <  ) _ (  ) _)  )   / )   / ) _)  )  (  )(_) ))   / )  (  )(_) )")
-    print(f"{Fore.MAGENTA} (__/\/\_)(____/ (_) (_)(____)(__\_)(__\_)(____)(_)\_)(____/(__\_)(_)\_)(____/")
+    print(Fore.MAGENTA + r"""
+  __  __  ____   _   _  ____  ____  ____  ____  _  _  ____  ____  _  _  ____ 
+ (  \/  )(  _ \ ( )_( )(  __)(  _ \(  _ \(  __)( )/ )(  _ \(  _ \( )/ )(  _ \
+  )    (  ) _ <  ) _ (  ) _)  )   / )   / ) _)  )  (  )(_) ))   / )  (  )(_) )
+ (__/\/\_)(____/ (_) (_)(____)(__\_)(__\_)(____)(_)\_)(____/(__\_)(_)\_)(____/
+    """)
     print(f"{Fore.WHITE} Credits: @monerthetimeprojector | ProxyEngine V2.0 SOCKS5\n")
 
 # --- PROXY ENGINE ---
 def get_fresh_proxies():
-    print(f"{Fore.CYAN}[*] Pobieranie 100 świeżych SOCKS5...")
+    print(f"{Fore.CYAN}[*] Pobieranie świeżych SOCKS5...")
     url = "https://api.proxyscrape.com/v2/?request=getproxies&protocol=socks5&timeout=10000&country=all&ssl=all&anonymity=all"
     try:
         res = requests.get(url, timeout=15)
@@ -34,7 +36,6 @@ def get_fresh_proxies():
 def is_proxy_working(proxy):
     proxies = {"http": f"socks5://{proxy}", "https": f"socks5://{proxy}"}
     try:
-        # Szybki ping do google
         requests.get("https://www.google.com", proxies=proxies, timeout=3)
         return True
     except:
@@ -46,7 +47,7 @@ def run_scraper():
     
     # SETUP
     keyword = input(f"{Fore.YELLOW}[?] Wpisz słowo kluczowe: ")
-    loc = "Polska" # Możesz dodać input, jeśli chcesz
+    loc = "Polska"
     target_count = int(input(f"{Fore.YELLOW}[?] Ile leadów szukamy: "))
     
     # Initialize Pool
@@ -80,7 +81,6 @@ def run_scraper():
         try:
             print(f"{Fore.YELLOW}[~] Zapytanie | Proxy: {proxy} | Strona: {page+1}")
             
-            # Wymuszenie prostego HTML
             url = f"https://www.google.com/search?q={keyword}+{loc}&tbm=lcl&gbv=1&start={page * 10}"
             headers = {"User-Agent": random.choice(USER_AGENTS)}
             
@@ -90,19 +90,16 @@ def run_scraper():
                 raise Exception("Bad Status Code")
                 
             soup = BeautifulSoup(res.text, 'html.parser')
-            
-            # Parsing - szukamy klas map
             items = soup.find_all('div', class_='VkpGBb')
             
             if not items:
                 print(f"{Fore.RED}[!] Brak wyników (może być CAPTCHA lub brak danych).")
-                valid_proxies.remove(proxy) # Proxy padło
+                valid_proxies.remove(proxy)
                 continue
             
             for item in items:
                 if len(leads) >= target_count: break
                 
-                # Ekstrakcja nazwy
                 name_tag = item.find('div', class_='rllt__details')
                 if name_tag:
                     name = name_tag.text.split('·')[0].strip()
@@ -111,7 +108,7 @@ def run_scraper():
                         print(f"{Fore.GREEN}[+] Złowiono: {name}")
             
             page += 1
-            time.sleep(random.uniform(2, 4)) # Anti-ban delay
+            time.sleep(random.uniform(2, 4))
             
         except Exception as e:
             print(f"{Fore.RED}[!] Błąd zapytania: {e}. Switching proxy...")
