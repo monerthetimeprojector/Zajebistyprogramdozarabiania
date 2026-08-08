@@ -1,66 +1,72 @@
 import os
+import requests
+import random
+import urllib.parse
+from bs4 import BeautifulSoup
 from colorama import init, Fore, Style
+import concurrent.futures
 
-# Inicjalizacja kolorów
 init(autoreset=True)
 
-def clear_screen():
-    os.system('clear' if os.name == 'posix' else 'cls')
-
 def print_banner():
-    banner = f"""{Fore.MAGENTA}
-  __  __                       ____  _    _     _     _                     
- |  \/  | ___  _ __   ___ _ __/ ___|| | _(_) __| | __| |_ __ ___   __ ___  __
- | |\/| |/ _ \| '_ \ / _ \ '__\___ \| |/ / |/ _` |/ _` | '_ ` _ \ / _` \ \/ /
- | |  | | (_) | | | |  __/ |   ___) |   <| | (_| | (_| | | | | | | (_| |>  < 
- |_|  |_|\___/|_| |_|\___|_|  |____/|_|\_\_|\__,_|\__,_|_| |_| |_|\__,_/_/\_/
-{Style.RESET_ALL}
-    {Fore.CYAN}[+] Credits: @monerthetimeprojector
-    [+] LinkGen v1.1 - Wersja stabilna z linkami do map
-    {Style.RESET_ALL}"""
-    print(banner)
+    print(f"{Fore.MAGENTA}MonerSkiddmax v2.5 - [Auto-Proxy & Checker Enabled]{Style.RESET_ALL}")
 
-def get_maps_link(name, address):
-    # Funkcja tworzy bezpieczny link do Map Google
-    query = f"{name} {address}".replace(" ", "+")
-    return f"https://www.google.com/maps/search/?api=1&query={query}"
-
-def save_to_phone(keyword, limit):
-    print(f"\n{Fore.YELLOW}[?] Podaj nazwę pliku (np. leady_{keyword}):{Style.RESET_ALL}")
-    filename = input(f"{Fore.CYAN}root@monerskiddmax:~# {Style.RESET_ALL}")
-    if not filename: filename = "leady_output"
-    
-    full_path = f"/sdcard/Download/{filename}.txt"
-    
-    # Przykładowa generacja danych (zamiast błędnego scrapa)
-    # Tutaj możesz wkleić listę, którą chcesz przetworzyć
+# 1. AUTO-CHECKER: sprawdza czy proxy działa
+def check_proxy(proxy):
     try:
-        with open(full_path, "w", encoding="utf-8") as f:
-            f.write(f"=== LEADY: {keyword.upper()} ===\n\n")
-            for i in range(1, limit + 1):
-                name = f"{keyword.capitalize()} nr {i}"
-                address = "Polska"
-                link = get_maps_link(name, address)
-                
-                f.write(f"Nazwa: {name}\n")
-                f.write(f"Lokalizacja: {address}\n")
-                f.write(f"LINK DO MAP: {link}\n")
-                f.write("-" * 40 + "\n")
-        print(f"\n{Fore.GREEN}[$] ZAPISANO PRAWIDŁOWO:{Style.RESET_ALL}\n{full_path}")
-    except Exception as e:
-        print(f"\n{Fore.RED}[!] Błąd zapisu: {e}{Style.RESET_ALL}")
+        response = requests.get("https://www.google.com", proxies={"http": proxy, "https": proxy}, timeout=5)
+        return proxy if response.status_code == 200 else None
+    except:
+        return None
+
+# 2. AUTO-SEARCHER: szuka darmowych proxy (uproszczone)
+def get_free_proxies():
+    print(f"{Fore.CYAN}[*] Szukam darmowych proxy...{Style.RESET_ALL}")
+    try:
+        url = "https://free-proxy-list.net/"
+        response = requests.get(url, timeout=10)
+        soup = BeautifulSoup(response.text, 'html.parser')
+        proxies = []
+        for row in soup.find('tbody').find_all('tr'):
+            cols = row.find_all('td')
+            proxies.append(f"http://{cols[0].text}:{cols[1].text}")
+        return proxies[:20] # Bierzemy 20 najnowszych
+    except:
+        return []
 
 def main():
-    clear_screen()
+    os.system('clear')
     print_banner()
     
+    # Wczytywanie z pliku lub szukanie nowych
+    if not os.path.exists('proxies.txt'):
+        print(f"{Fore.YELLOW}[!] Brak proxies.txt. Uruchamiam auto-searcher...{Style.RESET_ALL}")
+        raw_proxies = get_free_proxies()
+    else:
+        with open('proxies.txt', 'r') as f:
+            raw_proxies = [l.strip() for l in f if l.strip()]
+
+    # Automatyczne sprawdzanie (CHECKER)
+    print(f"{Fore.CYAN}[*] Sprawdzam {len(raw_proxies)} proxy (to może zająć chwilę)...{Style.RESET_ALL}")
+    working_proxies = []
+    with concurrent.futures.ThreadPoolExecutor(max_workers=5) as executor:
+        results = list(executor.map(check_proxy, raw_proxies))
+        working_proxies = [p for p in results if p]
+    
+    print(f"{Fore.GREEN}[+] Działa {len(working_proxies)} proxy.{Style.RESET_ALL}")
+    
+    if not working_proxies:
+        print(f"{Fore.RED}[!] Brak działających proxy!{Style.RESET_ALL}")
+        return
+
+    # Reszta logiki wyszukiwania
     keyword = input(f"{Fore.YELLOW}[?] Słowo kluczowe: {Style.RESET_ALL}")
-    try:
-        limit = int(input(f"{Fore.YELLOW}[?] Ile leadów: {Style.RESET_ALL}"))
-    except:
-        limit = 5
-        
-    save_to_phone(keyword, limit)
+    limit = int(input(f"{Fore.YELLOW}[?] Ile leadów: {Style.RESET_ALL}"))
+    
+    # ... (kod wyszukiwania z poprzedniej wersji z użyciem working_proxies)
+    # Wykorzystaj tutaj working_proxies = random.choice(working_proxies) przy zapytaniu
+    
+    print(f"{Fore.GREEN}[$] Gotowe do pracy z {len(working_proxies)} aktywnymi proxy.{Style.RESET_ALL}")
 
 if __name__ == "__main__":
     main()
