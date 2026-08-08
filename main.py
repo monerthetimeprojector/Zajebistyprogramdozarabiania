@@ -118,34 +118,22 @@ def fetch_maps_html(query: str, retries=3, timeout=25) -> str | None:
     if last_exc:
         err(f"Ostateczny błąd sieci: {last_exc}")
     return None
-
 def extract_app_state(html: str):
     """Wyciąga JSON z window.APP_INITIALIZATION_STATE."""
-    m = re.search(
-        r"APP_INITIALIZATION_STATE\s*=\s*(
-
-$$
-.+?
-$$
-
-)\s*;\s*(?:window\.APP_FLAGS|window\.)",
-        html, re.DOTALL,
-    )
+    m = re.search(r"APP_INITIALIZATION_STATE\s*=\s*(\[.+?\])\s*;\s*(?:window\.APP_FLAGS|window\.)", html, re.DOTALL)
     if not m:
-        # bardziej luźny fallback
-        m = re.search(r"APP_INITIALIZATION_STATE\s*=\s*(
-
-$$
-.+?
-$$
-
-);", html, re.DOTALL)
+        m = re.search(r"APP_INITIALIZATION_STATE\s*=\s*(\[.+?\]);", html, re.DOTALL)
     if not m:
         return None
+    raw = m.group(1)
     try:
-        return json.loads(m.group(1))
+        return json.loads(raw)
     except json.JSONDecodeError:
-        return None
+        cleaned = raw.replace("\\n", "").replace("\\/", "/")
+        try:
+            return json.loads(cleaned)
+        except Exception:
+            return None
 
 def _safe(obj, *path, default=None):
     cur = obj
@@ -342,10 +330,11 @@ def action_scrape():
     except ValueError:
         limit = 20
 
-    t0 = time.time()
+        t0 = time.time()
     leads = scrape_google_maps(keyword, region, limit)
     dt = time.time() - t0
-        if not leads:
+
+    if not leads:
         err("Zero wyników. Spróbuj innego słowa/regionu lub odczekaj chwilę (Google mógł ograniczyć).")
         return
 
