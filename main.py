@@ -12,7 +12,7 @@ from colorama import init, Fore, Style
 # Inicjalizacja kolorów
 init(autoreset=True)
 
-# Lista User-Agentów do rotacji (żeby Google nie zbanowało za szybko)
+# Lista User-Agentów do rotacji
 USER_AGENTS = [
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/114.0.0.0 Safari/537.36",
     "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/113.0.0.0 Safari/537.36",
@@ -31,9 +31,9 @@ def print_banner():
  | |  | | (_) | | | |  __/ |   ___) |   <| | (_| | (_| | | | | | | (_| |>  < 
  |_|  |_|\___/|_| |_|\___|_|  |____/|_|\_\_|\__,_|\__,_|_| |_| |_|\__,_/_/\_/
 {Style.RESET_ALL}
-    {Fore.CYAN}[+] Wersja: v2.0 PROXY EDITION
+    {Fore.CYAN}[+] Wersja: v2.1 PROXY & BYPASS EDITION
     [+] Credits: @monerthetimeprojector 
-    [+] Ulepszone: Scraper HTTP, Proxy Checker, Smart Links
+    [+] Ulepszone: Bypass Cookies, Agresywny Regex, Proxy Checker
     {Style.RESET_ALL}"""
     print(banner)
 
@@ -42,7 +42,6 @@ def print_banner():
 def get_free_proxies():
     print(f"\n{Fore.YELLOW}[*] Pobieranie darmowych proxy...{Style.RESET_ALL}")
     try:
-        # Pobieramy proxy z publicznego API
         url = "https://api.proxyscrape.com/v2/?request=displayproxies&protocol=http&timeout=10000&country=all&ssl=all&anonymity=all"
         response = requests.get(url, timeout=10)
         proxies = response.text.strip().split("\r\n")
@@ -65,7 +64,7 @@ def check_and_filter_proxies(proxies, limit=15):
     print(f"{Fore.YELLOW}[*] Sprawdzanie działających proxy (wielowątkowo)...{Style.RESET_ALL}")
     working_proxies = []
     with concurrent.futures.ThreadPoolExecutor(max_workers=20) as executor:
-        results = executor.map(check_proxy, proxies[:100]) # Sprawdzamy pierwsze 100 z listy
+        results = executor.map(check_proxy, proxies[:100])
         for res in results:
             if res:
                 working_proxies.append(res)
@@ -90,54 +89,69 @@ def scrape_leads_no_api(keyword, region, limit, proxy=None):
     
     headers = {
         "User-Agent": random.choice(USER_AGENTS),
-        "Accept-Language": "pl-PL,pl;q=0.9,en-US;q=0.8,en;q=0.7"
+        "Accept-Language": "pl-PL,pl;q=0.9,en-US;q=0.8",
+        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8"
+    }
+    
+    # MAGICZNE CIASTECZKO - omija ekran "Zgadzam się" (RODO) na Google. Bez tego skrypt dostaje pustą stronę!
+    cookies = {
+        "CONSENT": "YES+cb.20230531-04-p0.pl+FX+111"
     }
     
     proxies = {"http": f"http://{proxy}", "https": f"http://{proxy}"} if proxy else None
 
-    # Tworzymy zapytanie wyszukiwania
     search_query = f"{keyword} {region}"
-    url = f"https://www.google.com/search?q={urllib.parse.quote(search_query)}&num={limit + 10}"
+    # Zwiększamy bufor w num, by na pewno wyciągnąć limit
+    url = f"https://www.google.com/search?q={urllib.parse.quote(search_query)}&num={limit + 20}"
     
     try:
         print(f"{Fore.CYAN}[*] Łączenie z bazą Google...{Style.RESET_ALL}")
-        response = requests.get(url, headers=headers, proxies=proxies, timeout=10)
+        response = requests.get(url, headers=headers, cookies=cookies, proxies=proxies, timeout=15)
         
         if response.status_code == 429:
-            print(f"{Fore.RED}[!] Google zablokowało IP (Kod 429 - Too Many Requests). Użyj proxy!{Style.RESET_ALL}")
+            print(f"{Fore.RED}[!] Google zablokowało IP (Kod 429). Użyj proxy!{Style.RESET_ALL}")
             return leads
 
         soup = BeautifulSoup(response.text, "html.parser")
         
-        # Ekstrakcja danych (szukamy bloków z wynikami)
-        # To jest uproszczony parser, bo Google mocno zmienia układ, ale szukamy tagów H3 i numerów telefonów w tekście.
-        for g in soup.find_all('div', class_='g'):
+        # AGRESYWNY PARSER: Szukamy h3 lub divów z klasami odpowiadającymi tytułom w surowym HTML
+        for element in soup.find_all(['h3', 'div']):
             if len(leads) >= limit:
                 break
                 
-            title_element = g.find('h3')
-            text_element = g.text
-            
-            if title_element:
-                name = title_element.text
+            # Łapiemy tagi tytułowe lub surowe klasy wyników lokalnych (BNeawe to popularna ukryta klasa w Google)
+            if element.name == 'h3' or (element.has_attr('class') and any('BNeawe' in c for c in element['class'])):
+                name = element.text.strip()
                 
-                # Prosty Regex na polskie numery telefonów
-                phone_match = re.search(r'(\+48)?[\s\-]?\d{3}[\s\-]?\d{3}[\s\-]?\d{3}', text_element)
-                phone = phone_match.group() if phone_match else "Brak podanego numeru"
-                
-                # Formatujemy czysty numer
-                if phone != "Brak podanego numeru":
-                    phone = re.sub(r'[^\d+]', '', phone)
-                
-                # Dodajemy do leadów jeśli wygląda sensownie
-                if name:
-                    leads.append({
-                        "name": name,
-                        "address": region, # Przypisujemy region jako główny adres dla linku
-                        "phone": phone
-                    })
+                # Ignorujemy fałszywe bloki typu "Więcej wyników"
+                if len(name) < 3 or "Więcej wyników" in name or "http" in name:
+                    continue
+
+                # Idziemy w górę drzewa HTML, by chwycić CAŁY kontener biznesu
+                parent = element.parent
+                for _ in range(4):
+                    if parent: parent = parent.parent
                     
-        # Dodajemy linki do wyciągniętych danych
+                if parent:
+                    text_content = parent.get_text(separator=' ')
+                    
+                    # Regex na polskie numery: +48, spacje, myślniki, kropki
+                    phone_match = re.search(r'(?:\+48)?[\s\-]?\d{3}[\s\-]?\d{3}[\s\-]?\d{3}', text_content)
+                    
+                    if phone_match:
+                        phone_raw = phone_match.group()
+                        phone_clean = re.sub(r'[^\d+]', '', phone_raw) # Zostawiamy tylko cyfry i +
+                        
+                        if len(phone_clean) >= 9:
+                            # Zapobiegamy dublowaniu leadów w bazie
+                            if not any(lead['name'] == name for lead in leads) and not any(lead['phone'] == phone_clean for lead in leads):
+                                leads.append({
+                                    "name": name,
+                                    "address": region,
+                                    "phone": phone_clean
+                                })
+                                
+        # Generowanie Smart Linków
         for lead in leads:
             lead['maps_link'] = get_maps_link(lead['name'], lead['address'])
             
@@ -159,10 +173,9 @@ def save_to_phone(data):
     filename = input(f"{Fore.CYAN}root@monerskiddmax:~# {Style.RESET_ALL}")
     if not filename: filename = "leady_output"
     
-    # WYMUSZONA ŚCIEŻKA DO POBRANYCH ANDROIDA (Termux friendly)
+    # WYMUSZONA ŚCIEŻKA DO POBRANYCH ANDROIDA
     full_path = f"/sdcard/Download/{filename}.txt"
     
-    # Próba zapisu (zabezpieczenie jeśli odpalasz na PC)
     if not os.path.exists("/sdcard/Download/"):
         full_path = f"{filename}.txt"
         print(f"{Fore.YELLOW}[!] Ścieżka /sdcard/ niedostępna. Zapisuję w obecnym folderze jako {full_path}{Style.RESET_ALL}")
@@ -226,7 +239,7 @@ def main():
             if leads:
                 save_to_phone(leads)
             else:
-                print(f"\n{Fore.RED}[!] Nie znaleziono leadów. Google mogło zablokować żądanie, spróbuj z proxy.{Style.RESET_ALL}")
+                print(f"\n{Fore.RED}[!] Nie znaleziono leadów. Sprawdź dokładnie zapytanie lub użyj proxy (Google blokuje czyste połączenia HTTP w niektórych sieciach).{Style.RESET_ALL}")
             
             input(f"\n{Fore.WHITE}Wciśnij ENTER, aby wrócić do menu...{Style.RESET_ALL}")
             
@@ -237,7 +250,7 @@ def main():
             input(f"\n{Fore.WHITE}Wciśnij ENTER, aby wrócić do menu...{Style.RESET_ALL}")
             
         elif choice == '4':
-            print(f"\n{Fore.GREEN}[*] Pozdro mordo, do usłyszenia!{Style.RESET_ALL}")
+            print(f"\n{Fore.GREEN}[*] Pozdro mordo, owocnych łowów na leady!{Style.RESET_ALL}")
             break
 
 if __name__ == "__main__":
@@ -246,4 +259,4 @@ if __name__ == "__main__":
     except KeyboardInterrupt:
         print(f"\n\n{Fore.RED}[!] Przerwano przez użytkownika. Elo!{Style.RESET_ALL}")
         sys.exit(0)
-    
+        
