@@ -1,86 +1,63 @@
-import os
-import sys
-import time
 import requests
+from bs4 import BeautifulSoup
 import urllib.parse
 from colorama import init, Fore, Style
 
-# Inicjalizacja
 init(autoreset=True)
 
-def clear_screen():
-    os.system('clear' if os.name == 'posix' else 'cls')
+# KONFIGURACJA PROXY (Wpisz swoje proxy w formacie: http://user:pass@ip:port)
+# Jeśli nie używasz proxy, zostaw None
+PROXY = {
+    'http': None,
+    'https': None
+}
 
-def print_banner():
-    banner = f"""{Fore.MAGENTA}
-  __  __                       ____  _    _     _     _                     
- |  \/  | ___  _ __   ___ _ __/ ___|| | _(_) __| | __| |_ __ ___   __ ___  __
- | |\/| |/ _ \| '_ \ / _ \ '__\___ \| |/ / |/ _` |/ _` | '_ ` _ \ / _` \ \/ /
- | |  | | (_) | | | |  __/ |   ___) |   <| | (_| | (_| | | | | | | (_| |>  < 
- |_|  |_|\___/|_| |_|\___|_|  |____/|_|\_\_|\__,_|\__,_|_| |_| |_|\__,_/_/\_/
-{Style.RESET_ALL}
-    {Fore.CYAN}[+] Credits: @monerthetimeprojector on github
-    [+] All rights reserved | LinkGen v1.0
-    {Style.RESET_ALL}"""
-    print(banner)
-
-def get_maps_link(name, address):
-    """Generuje klikalny link do Google Maps"""
-    query = f"{name} {address}"
-    encoded_query = urllib.parse.quote(query)
-    return f"https://www.google.com/maps/search/?api=1&query={encoded_query}"
-
-def scrape_google_maps(keyword, region, limit):
-    # Symulacja danych
-    mock_leads = [
-        {"name": f"{keyword.capitalize()} Expert", "address": f"Olsztyn", "phone": "+48 500-100-200"},
-        {"name": f"Mobilny {keyword.capitalize()}", "address": f"Lidzbark Warmiński", "phone": "+48 600-200-300"},
-    ]
+def get_leads(keyword, limit):
+    print(f"\n{Fore.CYAN}[*] Przeszukuję Google dla: {keyword}...{Style.RESET_ALL}")
     
-    # Dodajemy linki do każdego obiektu
-    for lead in mock_leads:
-        lead['maps_link'] = get_maps_link(lead['name'], lead['address'])
-        
-    return mock_leads[:limit]
+    # Budowanie URL (używamy duckduckgo lub google - google bez API jest trudne)
+    query = urllib.parse.quote(keyword)
+    url = f"https://www.google.com/search?q={query}&tbm=lcl" # tbm=lcl to filtr map
+    
+    headers = {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 Safari/537.36"
+    }
 
-def save_to_phone(data):
-    print(f"\n{Fore.YELLOW}[?] Podaj nazwę pliku (np. leady_fizjo):{Style.RESET_ALL}")
-    filename = input(f"{Fore.CYAN}root@monerskiddmax:~# {Style.RESET_ALL}")
-    if not filename: filename = "leady_output"
-    
-    # WYMUSZONA ŚCIEŻKA DO POBRANYCH ANDROIDA
-    full_path = f"/sdcard/Download/{filename}.txt"
-    
     try:
-        with open(full_path, "w", encoding="utf-8") as f:
-            f.write(f"=== MONERSKIDDMAX LEADS ===\n\n")
-            for item in data:
-                f.write(f"Nazwa: {item['name']}\n")
-                f.write(f"Adres: {item['address']}\n")
-                f.write(f"Telefon: {item['phone']}\n")
-                f.write(f"Link Mapy: {item['maps_link']}\n")
-                f.write("-" * 40 + "\n\n")
-        print(f"\n{Fore.GREEN}[$] ZAPISANO PRAWIDŁOWO:{Style.RESET_ALL}\n{full_path}")
+        # Prawdziwe zapytanie z proxy
+        response = requests.get(url, headers=headers, proxies=PROXY, timeout=10)
+        
+        if response.status_code != 200:
+            print(f"{Fore.RED}[!] Błąd połączenia: {response.status_code}. Zmień proxy!")
+            return []
+
+        soup = BeautifulSoup(response.text, 'html.parser')
+        
+        # Pamiętaj: Google Maps dynamicznie zmienia klasy. To jest bardzo podstawowy parser.
+        results = []
+        # Przykładowe szukanie kontenerów (klasy mogą się zmieniać!)
+        containers = soup.find_all('div', class_='tZPcob') 
+        
+        for container in containers[:limit]:
+            name = container.get_text() # Uproszczone
+            results.append({"name": name, "address": "Wymaga zaawansowanego parsera"})
+            
+        return results
     except Exception as e:
-        print(f"\n{Fore.RED}[!] Błąd zapisu: {e}{Style.RESET_ALL}")
+        print(f"{Fore.RED}[!] Błąd scrapowania: {e}{Style.RESET_ALL}")
+        return []
 
 def main():
-    clear_screen()
-    print_banner()
+    keyword = input(f"{Fore.YELLOW}Słowo kluczowe: {Style.RESET_ALL}")
+    limit = int(input(f"{Fore.YELLOW}Ile leadów: {Style.RESET_ALL}"))
     
-    # Proste zbieranie danych
-    print(f"{Fore.YELLOW}[?] Słowo kluczowe: {Style.RESET_ALL}", end="")
-    keyword = input()
-    print(f"{Fore.YELLOW}[?] Ile leadów: {Style.RESET_ALL}", end="")
-    try:
-        limit = int(input())
-    except:
-        limit = 1
-        
-    leads = scrape_google_maps(keyword, "Polska", limit)
+    leads = get_leads(keyword, limit)
     
     if leads:
-        save_to_phone(leads)
+        print(f"{Fore.GREEN}[+] Znaleziono {len(leads)} leadów.{Style.RESET_ALL}")
+        # Zapis do pliku... (tak jak w poprzednim kodzie)
+    else:
+        print(f"{Fore.RED}[!] Nic nie znaleziono. Sprawdź proxy lub czy Google Cię nie blokuje.{Style.RESET_ALL}")
 
 if __name__ == "__main__":
     main()
