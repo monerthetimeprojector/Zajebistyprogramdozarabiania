@@ -9,9 +9,8 @@ import concurrent.futures
 init(autoreset=True)
 
 def print_banner():
-    print(f"{Fore.MAGENTA}MonerSkiddmax v2.5 - [Auto-Proxy & Checker Enabled]{Style.RESET_ALL}")
+    print(f"{Fore.MAGENTA}MonerSkiddmax v2.6 - [Proxy, Checker & Searcher Active]{Style.RESET_ALL}")
 
-# 1. AUTO-CHECKER: sprawdza czy proxy działa
 def check_proxy(proxy):
     try:
         response = requests.get("https://www.google.com", proxies={"http": proxy, "https": proxy}, timeout=5)
@@ -19,54 +18,79 @@ def check_proxy(proxy):
     except:
         return None
 
-# 2. AUTO-SEARCHER: szuka darmowych proxy (uproszczone)
 def get_free_proxies():
-    print(f"{Fore.CYAN}[*] Szukam darmowych proxy...{Style.RESET_ALL}")
     try:
-        url = "https://free-proxy-list.net/"
-        response = requests.get(url, timeout=10)
+        response = requests.get("https://free-proxy-list.net/", timeout=10)
         soup = BeautifulSoup(response.text, 'html.parser')
         proxies = []
-        for row in soup.find('tbody').find_all('tr'):
+        for row in soup.find('tbody').find_all('tr')[:20]:
             cols = row.find_all('td')
             proxies.append(f"http://{cols[0].text}:{cols[1].text}")
-        return proxies[:20] # Bierzemy 20 najnowszych
+        return proxies
     except:
         return []
+
+def search_leads(keyword, limit, working_proxies):
+    print(f"{Fore.CYAN}[*] Wyszukiwanie leadów dla: {keyword}...{Style.RESET_ALL}")
+    results = []
+    
+    # Wybieramy losowe działające proxy
+    proxy = {"http": random.choice(working_proxies), "https": random.choice(working_proxies)}
+    headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/115.0.0.0 Safari/537.36"}
+    
+    query = urllib.parse.quote(keyword)
+    url = f"https://www.google.com/search?q={query}+firmy+mapy"
+    
+    try:
+        response = requests.get(url, headers=headers, proxies=proxy, timeout=10)
+        soup = BeautifulSoup(response.text, 'html.parser')
+        
+        for g in soup.find_all('h3')[:limit]:
+            name = g.text
+            if "..." in name: continue
+            maps_link = f"https://www.google.com/maps/search/?api=1&query={urllib.parse.quote(name)}"
+            results.append({"name": name, "link": maps_link})
+    except Exception as e:
+        print(f"{Fore.RED}[!] Błąd w trakcie wyszukiwania: {e}{Style.RESET_ALL}")
+    
+    return results
 
 def main():
     os.system('clear')
     print_banner()
     
-    # Wczytywanie z pliku lub szukanie nowych
+    # 1. Ładowanie proxy
     if not os.path.exists('proxies.txt'):
-        print(f"{Fore.YELLOW}[!] Brak proxies.txt. Uruchamiam auto-searcher...{Style.RESET_ALL}")
         raw_proxies = get_free_proxies()
     else:
         with open('proxies.txt', 'r') as f:
             raw_proxies = [l.strip() for l in f if l.strip()]
 
-    # Automatyczne sprawdzanie (CHECKER)
-    print(f"{Fore.CYAN}[*] Sprawdzam {len(raw_proxies)} proxy (to może zająć chwilę)...{Style.RESET_ALL}")
-    working_proxies = []
+    # 2. Sprawdzanie proxy
+    print(f"{Fore.CYAN}[*] Sprawdzam proxy...{Style.RESET_ALL}")
     with concurrent.futures.ThreadPoolExecutor(max_workers=5) as executor:
-        results = list(executor.map(check_proxy, raw_proxies))
-        working_proxies = [p for p in results if p]
-    
-    print(f"{Fore.GREEN}[+] Działa {len(working_proxies)} proxy.{Style.RESET_ALL}")
+        working_proxies = [p for p in executor.map(check_proxy, raw_proxies) if p]
     
     if not working_proxies:
-        print(f"{Fore.RED}[!] Brak działających proxy!{Style.RESET_ALL}")
+        print(f"{Fore.RED}[!] Brak działających proxy. Program kończy działanie.{Style.RESET_ALL}")
         return
-
-    # Reszta logiki wyszukiwania
+    print(f"{Fore.GREEN}[+] Działa {len(working_proxies)} proxy.{Style.RESET_ALL}")
+    
+    # 3. Wyszukiwanie
     keyword = input(f"{Fore.YELLOW}[?] Słowo kluczowe: {Style.RESET_ALL}")
     limit = int(input(f"{Fore.YELLOW}[?] Ile leadów: {Style.RESET_ALL}"))
     
-    # ... (kod wyszukiwania z poprzedniej wersji z użyciem working_proxies)
-    # Wykorzystaj tutaj working_proxies = random.choice(working_proxies) przy zapytaniu
+    leads = search_leads(keyword, limit, working_proxies)
     
-    print(f"{Fore.GREEN}[$] Gotowe do pracy z {len(working_proxies)} aktywnymi proxy.{Style.RESET_ALL}")
+    if leads:
+        filename = input(f"{Fore.YELLOW}[?] Nazwa pliku wyjściowego: {Style.RESET_ALL}")
+        path = f"/sdcard/Download/{filename}.txt"
+        with open(path, "w", encoding="utf-8") as f:
+            for item in leads:
+                f.write(f"Firma: {item['name']}\nLink: {item['link']}\n---\n")
+        print(f"{Fore.GREEN}[+] Zapisano: {path}{Style.RESET_ALL}")
+    else:
+        print(f"{Fore.RED}[!] Nic nie znaleziono.{Style.RESET_ALL}")
 
 if __name__ == "__main__":
     main()
